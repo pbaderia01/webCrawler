@@ -25,14 +25,18 @@ func usage() {
 }
 
 func main() {
-	flag.Usage = usage
-	flag.Parse()
-	args := flag.Args()
-	if len(args) < 1 {
-		usage()
-		fmt.Println("Please specify start page")
-		os.Exit(1)
-	}
+	var args []string
+	if os.Getenv("CRAWL_URL")==""{
+		flag.Usage = usage
+		flag.Parse()
+		args = flag.Args()
+		if len(args) < 1 {
+			usage()
+			fmt.Println("Please specify start page")
+			os.Exit(1)
+		}} else {
+			args = append(args,os.Getenv("CRAWL_URL"))
+		}
 	args[0] = checkValidBaseURL(args[0])
 	hostURL, err := url.Parse(args[0])
 	if err!=nil{
