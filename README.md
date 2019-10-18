@@ -25,18 +25,26 @@ All other options can be configured as env variables by either setting them as a
 ENV_VAR_1=value go run crawler.go
 ```
 
+To run just the crawler it can be run as a docker container as well
+```
+docker run -e CRAWL_URL=<URL> baderiapiyush/web-crawler-go:latest
+```
+
 ##Examples
 To run with a concurrency of 3:
 ```
-THREAD_COUNT=3 go run crawler.go <URL> 
+THREAD_COUNT=3 go run crawler.go <URL>
+docker run -e CRAWL_URL=<URL> -e THREAD_COUNT=3 baderiapiyush/web-crawler-go:latest
 ```
 To store responses on disk:
 ```
 STORE_ON_DISK=true ROOT_PATH=/Users/piyushbaderia/response/ go run crawler.go <URL>
+docker run -e CRAWL_URL=<URL> -e STORE_ON_DISK=true ROOT_PATH=/Users/piyushbaderia/response/ baderiapiyush/web-crawler-go:latest
 ```
 To Display URIs that are being crawled:
 ```
 DISPLAY_URI=true go run crawler.go <URL>
+docker run -e CRAWL_URL=<URL> -e DISPAY_URI=true baderiapiyush/web-crawler-go:latest
 ```
 
 ## Features
