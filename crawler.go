@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 var insertCounter int64
@@ -239,14 +240,18 @@ func enqueueAndFetch(uri string, queue chan string, hostBaseURL string, writeOnD
 
 func fetchURI(uri string, writeOnDisk bool, rootPath string, uriOutput bool) []string{
 	atomic.AddInt64(&visitedCounter,1)
-	resp, err := http.Get(uri)
+	var httpClient = &http.Client{
+		Timeout: 30*time.Second,
+	}
+
+	resp, reqErr := httpClient.Get(uri)
+	if reqErr!=nil{
+		fmt.Println("Error while fetching response")
+		fmt.Println(reqErr)
+	}
 	checkCounters()
 	if uriOutput{
 		fmt.Println(uri)
-	}
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
 	}
 	var links []string
 	if writeOnDisk {
