@@ -16,16 +16,44 @@ import (
 	"time"
 )
 
-var insertCounter int64
-var visitedCounter int64
-var inserted sync.Map
-
-func usage() {
-	fmt.Fprintf(os.Stderr, "Please Use the module as : go run <filename>.go <URI>\n")
-	flag.PrintDefaults()
-}
+var insertCounter int64 //A counter to keep a track of the number of URIs inserted into the channel
+var visitedCounter int64 //A counter to keep a track of the number of URIs visited
+var inserted sync.Map //A syncMap to keep a track of the URIs parsed by the HTML
 
 func main() {
+	crawlURI := getCrawlURI()
+	crawlURI = checkValidBaseURL(crawlURI)
+	_,crawlErr := strconv.ParseBool(crawlURI)
+	if crawlErr==nil{
+		fmt.Println("REACHED")
+		fmt.Println(crawlURI)
+	}
+	hostBaseURL := getBaseHostname(crawlURI)
+	writeOnDisk := checkWriteOnDisk()
+	queue := make(chan string)
+	done := make(chan bool)
+	insertInitialURI(crawlURI,queue)
+	rootPath := getRootPath(&writeOnDisk)
+	uriOutput := checkDisplay()
+	threads := getThreadCount()
+	createConcurrentThreads(done,queue,hostBaseURL, writeOnDisk, rootPath, uriOutput, threads, crawlURI)
+	close(done)
+}
+
+//Specifies the usage instructions for the source code to be run
+
+func usage() {
+	_, _ = fmt.Fprintf(os.Stderr, "Please Use the module as : go run <filename>.go <URI>\n")
+}
+
+/* The function prompts the user with a message on how to run the source files in case
+	user doesn't provide an initial input
+	Returns:
+		Checks first for the value of the env var CRAWL_URL and if it is set returns the value set in CRAWL_URL
+		Else checks the flags provided by user with the source code to run and if not found exits with an error message
+ */
+
+func getCrawlURI() string{
 	var args []string
 	if os.Getenv("CRAWL_URL")==""{
 		flag.Usage = usage
@@ -36,63 +64,9 @@ func main() {
 			fmt.Println("Please specify start page")
 			os.Exit(1)
 		}} else {
-			args = append(args,os.Getenv("CRAWL_URL"))
-		}
-	args[0] = checkValidBaseURL(args[0])
-	hostURL, err := url.Parse(args[0])
-	if err!=nil{
-		fmt.Println("Invalid URL provided. Please find the error below:")
-		fmt.Println(err)
-		os.Exit(1)
+		args = append(args,os.Getenv("CRAWL_URL"))
 	}
-	writeOnDisk := checkWriteOnDisk()
-	inserted.Store(args[0],true)
-	inserted.Store(args[0]+"/",true)
-	hostBaseURL := hostURL.Hostname()
-	queue := make(chan string)
-	go func() { queue <- args[0]}()
-	atomic.AddInt64(&insertCounter,1)
-	done := make(chan bool)
-	rootPath := os.Getenv("ROOT_PATH")
-	if writeOnDisk && !checkValidDiskPath(rootPath){
-		os.Exit(1)
-	}
-	uriOutputflag := os.Getenv("DISPLAY_URI")
-	uriOutput,_ := strconv.ParseBool(uriOutputflag)
-	createConcurrentThreads(done,queue,hostBaseURL, writeOnDisk, rootPath, uriOutput)
-}
-
-/* The function takes the following arguments and starts execution with a defa
-Arguments:
-  	Done : Bool channel to synchronize thread execution
-  	Queue: String Channel to put URIs in
-  	hostBaseURL: String with the base url of the URI with which program was run
-  	inserted: SyncMap to maintain a list of all the URIs found
-  	writeOnDisk: bool variable to check if a value was supplied to STORE_ON_DISK env variable
-  	insertCounter: An int counter to maintain number of URIs parsed
-  	visitedCounter: An int counter to maintain number of URIs fetched*/
-
-func createConcurrentThreads(done chan bool, queue chan string, hostBaseURL string, writeOnDisk bool, rootPath string, uriOutput bool) {
-	var threads int64
-	var err error
-	if os.Getenv("THREAD_COUNT") != ""{
-		threads, err = strconv.ParseInt(os.Getenv("THREAD_COUNT"),10,32)
-		if err!=nil{
-			fmt.Println("Invalid value for THREAD_COUNT env variable")
-			os.Exit(1)
-		}
-	} else {
-		threads = int64(5)
-	}
-	for i := 0; i < int(threads); i++ {
-		go func() {
-			for uri := range queue {
-				enqueueAndFetch(uri, queue, hostBaseURL, writeOnDisk, rootPath, uriOutput)
-			}
-			done <- true
-		}()
-	}
-	<-done
+	return args[0]
 }
 
 /*Checks if the base URL is valid and is of the format <protocol>://<baseURL>.<top-level-domain>
@@ -100,82 +74,199 @@ func createConcurrentThreads(done chan bool, queue chan string, hostBaseURL stri
 	URL : a string argument which is passed in the args for baseURL
   Returns:
 	URL: Returns a string with a valid baseURL
- */
+*/
 
 func checkValidBaseURL (URL string) string {
 	if !strings.HasPrefix(URL,"https") && !strings.HasPrefix(URL,"http") {
 		URL = "https://"+URL
 	}
 	if !strings.Contains(URL,".") {
-		URL = URL+".com"
+		fmt.Println("Invalid URI provided. No top level domain provided in the URI")
+		return "false"
 	}
 	return URL
+}
+
+/*Gets the value of the crawlURI's hostname
+	Arguments:
+		crawlURI: A string with the value of the initial URI provided by the user.
+	Returns:
+		A string with the hostname of the crawlURI
+*/
+
+func getBaseHostname(crawlURI string) string{
+	hostURL, err := url.Parse(crawlURI)
+	if err!=nil{
+		fmt.Println("Invalid URL provided. Please find the error below:")
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	return hostURL.Hostname()
 }
 
 /*Checks the value of STORE_ON_DISK env variable and updates it to the bool variable
   Returns:
 	A boolean value after checking if STORE_ON_DISK is set
 */
-
 func checkWriteOnDisk() bool {
 	writeOnDisk, diskError := strconv.ParseBool(os.Getenv("STORE_ON_DISK"))
 	if diskError != nil {
 		fmt.Println("Warning: Invalid Value supplied for STORE_ON_DISK env variable")
 		fmt.Println("No response will be saved to the disk")
 	}
-	if writeOnDisk{
-		return true
-	} else {
-		return false
-	}
+	return writeOnDisk
 }
 
-/* This function exits once the inserted Counter is equal to the visited counter
-Arguments:
-	insertCounter: a int64 counter to keep track of number of URIs inserted in the channel
-	visitedCounter: a int64 counter to keep track of number of URIs visited
+/* Inserts initial crawlURI into the queue to start processing
+   Arguments:
+		crawlURI: A string that specifies the initial URI
  */
 
-func checkCounters()  {
-	if insertCounter ==  visitedCounter && insertCounter>1 {
+func insertInitialURI(crawlURI string, queue chan string){
+	inserted.Store(crawlURI,true)
+	inserted.Store(crawlURI+"/",true)
+	go func() { queue <- crawlURI}()
+	atomic.AddInt64(&insertCounter,1)
+}
+
+/*
+	The function returns the value of the rootPath if the value specified in the ROOT_PATH env variable is valid
+	Else sets the writeOnDisk boolean flag to false and returns an empty string
+	Arguments:
+		A pointer to writeOnDisk boolean flag
+	Returns:
+		A valid root path as a string or sets the writeOnDisk flag to false
+ */
+
+func getRootPath(writeOnDisk *bool) string{
+	var rootPath string
+	if *writeOnDisk{
+		rootPath = os.Getenv("ROOT_PATH")
+		if !checkValidDiskPath(rootPath){
+			fmt.Println("Not saving any files to disk")
+			*writeOnDisk = false
+			rootPath = ""
+		}
+	}
+	return rootPath
+}
+
+/*
+	The function checks the value of the DISPLAY_URI env variable and returns false if an invalid value is provided
+	or returns the value of the DISPLAY_URI env variable
+ */
+
+func checkDisplay() bool{
+	uriOutputFlag := os.Getenv("DISPLAY_URI")
+	uriOutput, err:= strconv.ParseBool(uriOutputFlag)
+	if err != nil{
+		fmt.Println("Invalid value specified for display URI")
+		fmt.Println("No URI will be printed")
+		return false
+	}
+	return uriOutput
+}
+
+/*
+	The function checks the value of the env variable THREAD_COUNT if the value specified in the env variable
+	is invalid an error message is generated and the program exits.
+	Defaults to 5
+	Returns:
+		An int64 with the number of threads.
+ */
+
+func getThreadCount() int64{
+	var threads int64
+	if os.Getenv("THREAD_COUNT") != ""{
+		var err error
+		threads, err = strconv.ParseInt(os.Getenv("THREAD_COUNT"),10,64)
+		if err != nil{
+			fmt.Println("Invalid value for THREAD_COUNT env variable")
+			os.Exit(1)
+		}
+	} else {
+		threads = int64(5)
+	}
+	return threads
+}
+
+
+/* The function takes the following arguments and starts execution with a default value of 5
+Arguments:
+  	Done : Bool channel to synchronize thread execution
+  	Queue: String Channel to put URIs in
+  	hostBaseURL: String with the base url of the URI with which program was run
+  	writeOnDisk: bool variable to check if a value was supplied to STORE_ON_DISK env variable
+  	rootPath: String with the root path on the disk to which response is to be saved
+	uriOutput: Bool fetched from DISPLAY_URI to determine if the visited URI should be printed
+	threads: An int64 with the number of threads fetched from THREAD_COUNT defaults to 5
+	crawlURI: A string variable with the initial URI provided that must be crawled
+ */
+
+func createConcurrentThreads(done chan bool, queue chan string, hostBaseURL string, writeOnDisk bool, rootPath string, uriOutput bool, threads int64, crawlURI string) {
+	for i := 0; i < int(threads); i++ {
+		go func() {
+			for uri := range queue {
+				httpBody := fetchURI(uri)
+				httpBodyReader := uriOutputStore(httpBody,uriOutput,uri,writeOnDisk,rootPath)
+				links := getAllLinksHTML(httpBodyReader)
+				filterAndEnqueue(links, queue, hostBaseURL, crawlURI)
+				checkCounters(queue,done)
+			}
+			done <- true
+		}()
+	}
+	<-done
+}
+
+/*
+	The function checks the values of insertCounter and visitedCounter and checks for equality
+	On equality the function closes the queue channel and throws the flow back to the original function
+	Arguments:
+		queue: A string channel that is used to maintain a list of the URIs
+		done: A channel to synchronize the execution of multiple threads
+	Return:
+		If equal prints the number of URIs visited and closes queue channel and the flow is thrown back
+ */
+
+func checkCounters(queue chan string, done chan bool)  {
+	if insertCounter ==  visitedCounter {
 		fmt.Println("Total Visited URIs: "+strconv.FormatInt(visitedCounter,10))
-		os.Exit(1)
+		close(queue)
+		<- done
 	}
 }
 
-/* This function stores the http responses for different URIs on disk
-   Arguments:
-		httpBody: The resp.body is passed as an ioReader to the function
-  Returns:
+/* The function stores the string in the reader object and stores at the rootPath 
+	Arguments:
+		httpBody: A io reader containing the response body
+		rootPath: A string containing the path of the root directory
+	Returns:
 		A string with the response body
  */
 
 func storeOnDisk(httpBody io.Reader, rootPath string) string {
-		buf := new(bytes.Buffer)
-		_, bufReadFromerr := buf.ReadFrom(httpBody)
-		if bufReadFromerr!= nil{
-			fmt.Println("Error reading from buffer")
-			fmt.Println(bufReadFromerr)
-		}
-		s := buf.String()
-		strCounter := strconv.FormatInt(visitedCounter,10)
-		out, _ := os.Create(rootPath+strCounter+".html")
-		defer out.Close()
-		_, outWriteStringErr := out.WriteString(s)
-		if outWriteStringErr!= nil{
-			fmt.Println("Error writing string to file")
-			fmt.Println(outWriteStringErr)
-		}
-		return s
+	buf := new(bytes.Buffer)
+	_, bufReadFromErr := buf.ReadFrom(httpBody)
+	if bufReadFromErr!= nil{
+		fmt.Println("Error reading from buffer")
+		fmt.Println(bufReadFromErr)
+	}
+	s := buf.String()
+	strCounter := strconv.FormatInt(visitedCounter,10)
+	out, _ := os.Create(rootPath+strCounter+".html")
+	defer out.Close()
+	_, outWriteStringErr := out.WriteString(s)
+	if outWriteStringErr!= nil{
+		fmt.Println("Error writing string to file")
+		fmt.Println(outWriteStringErr)
+	}
+	return s
 }
 
 /*
-The function checks for valid root directory and returns false if invalid directory is provided or no directory is provided
-	Arguments:
-		rootPath: A String with the value of ROOT_PATH env variable
-	Returns:
-		Returns a true value if directory is valid
-		Returns a false value if env variable is not set or dir is invalid
+	The function checks the value of the rootPath variable and returns a boolean 
+	Whether rootPath is a valid disk path 
  */
 
 func checkValidDiskPath(rootPath string) bool{
@@ -184,7 +275,7 @@ func checkValidDiskPath(rootPath string) bool{
 		return false
 	} else {
 		_, err := os.Open(rootPath)
-		if err!=nil{
+		if err!=nil {
 			fmt.Println("Invalid root directory")
 			fmt.Println(err)
 			return false
@@ -193,53 +284,46 @@ func checkValidDiskPath(rootPath string) bool{
 	return true
 }
 
-/* This function inserts URI into the channel, fetches the response from the URI
-	And adds all other URIs that are to be fetched and found in response body
-   Arguments:
-		uri: A string that is passed to the function to fetch the response from
-		insertCounter: A int64 arg to check the exit condition in checkCounters function and increment when a new URI is inserted
-		visitedCounter: A int64 arg to check the exit condition in checkCounters function and increment when a new URI is visited
-		writeOnDisk: A bool arg to check if the responses should be stored on disk
-		inserted: A SyncMap to maintain a map of all the URIs inserted into the channel to be visited
-		hostBaseURL: The base URI hostname to check for domain
-		queue: The channel to insert the URIs into
-*/
+/*
+	The function takes an array of strings containing all the links in the HTML response, converts the relative URIs
+	to absolute URIs, filters them based on the hostname and then inserts them into the queue channel to be processed
+	Arguments:
+		links: An array containing all the relative and absolute URIs
+		queue: A string channel to insert the URIs in
+		hostBaseURL: The hostname of the crawlURI (the initial URI provided by user)
+		crawlURI: The initial URI provided by the user to resolve references using
+ */
 
-func enqueueAndFetch(uri string, queue chan string, hostBaseURL string, writeOnDisk bool, rootPath string, uriOutput bool) {
-	links:= fetchURI(uri, writeOnDisk, rootPath, uriOutput)
+func filterAndEnqueue(links []string, queue chan string, hostBaseURL string, crawlURI string) {
 	for _, link := range links {
-		absolute := fixURL(link, uri)
-			absoluteURL, er := url.Parse(absolute)
-			if er!=nil{
-				return
+		absolute := fixURL(link, crawlURI)
+		absoluteURL, er := url.Parse(absolute)
+		if er!=nil{
+			return
+		}
+		//Will only insert it into the channel if the hostname is same as the hostName of the URL supplied in args
+		if absoluteURL.Hostname() == hostBaseURL{
+			_, _ = inserted.LoadOrStore(absolute+"/",true)
+			_, er := inserted.LoadOrStore(absolute,true)
+			if er!=true{
+				atomic.AddInt64(&insertCounter,1)
+				go func() {
+					queue <- absolute }()
 			}
-			//Will only insert it into the channel if the hostname is same as the hostName of the URL supplied in args
-			if absoluteURL.Hostname() == hostBaseURL{
-				_, er := inserted.Load(absolute)
-				if !er {
-					atomic.AddInt64(&insertCounter,1)
-					inserted.Store(absolute,true)
-					inserted.Store(absolute+"/",true)
-					go func() {
-						queue <- absolute }()
-				}
-			}
+		}
 	}
 }
 
-/* This function returns the string array of all relative and absolute URIs for the given uri
-   Arguments:
-		uri: A string that is passed to the function to fetch the response from
-		insertCounter: A int64 arg to check the exit condition in checkCounters function
-		visitedCounter: A int64 arg to check the exit condition in checkCounters function
-		writeOnDisk: A bool arg to check if the responses should be stored on disk
-		uriOutput: A bool arg to specify if the URIs should be printed after fetching them
+/*
+	The function creates an httpClient with a request timeout of 30 seconds.
+	It closes the response body io.ReadCloser object and returns a new io.Reader object with the response body
+	Arguments:
+		uri: A string with the value of the uri from which the response is to be fetched
 	Returns:
-		An array of strings with relative and absolute URIs present in the response body html
-*/
+		An io.Reader with the response body
+ */
 
-func fetchURI(uri string, writeOnDisk bool, rootPath string, uriOutput bool) []string{
-	atomic.AddInt64(&visitedCounter,1)
+func fetchURI(uri string) io.Reader{
 	var httpClient = &http.Client{
 		Timeout: 30*time.Second,
 	}
@@ -249,19 +333,59 @@ func fetchURI(uri string, writeOnDisk bool, rootPath string, uriOutput bool) []s
 		fmt.Println("Error while fetching response")
 		fmt.Println(reqErr)
 	}
-	checkCounters()
+
+	atomic.AddInt64(&visitedCounter,1)
+	response := getStringFromReader(resp.Body)
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 && resp.StatusCode <= 499 {
+		response = "URI returned a 4xx status code"
+	} else if resp.StatusCode >= 500 && resp.StatusCode <= 599{
+		response = "URI returned a 5xx status code"
+	}
+	return strings.NewReader(response)
+}
+
+/*
+	The function prints on the terminal window if DISPLAY_URI=true and stores on disk if STORE_ON_DISK=true
+	this also returns an io.Reader object with the httpResponse
+	Arguments:
+		httBody: An io.Reader object with the response body
+		uriOutput: A bool argument with the value of DISPLAY_URI if the value set is valid bool
+		uri: The uri that is being visited and should be printed
+		writeOnDisk: A bool argument with the value of STORE_ON_DISK if the value set is valid bool
+		rootPath: A string argument with the root path of the disk (if the value set in ROOT_PATH is a valid path)
+	Returns:
+		An io reader object with the response body
+ */
+
+func uriOutputStore(httpBody io.Reader, uriOutput bool, uri string, writeOnDisk bool, rootPath string) io.Reader{
 	if uriOutput{
 		fmt.Println(uri)
 	}
-	var links []string
 	if writeOnDisk {
-		s  := storeOnDisk(resp.Body, rootPath)
-		links = getAllLinksHTML(strings.NewReader(s))
+		s  := storeOnDisk(httpBody, rootPath)
+		return strings.NewReader(s)
 	} else {
-		links = getAllLinksHTML(resp.Body)
+		return httpBody
 	}
-	defer resp.Body.Close()
-	return links
+}
+
+/* The function returns a string from a io.Reader object
+   Arguments:
+       httpBody: An io.reader from which to read and convert to string
+   Returns:
+       A string that was buffered in the io.Reader object
+ */
+
+func getStringFromReader(httpBody io.Reader) string{
+	buf := new(bytes.Buffer)
+	_, bufReadFromErr := buf.ReadFrom(httpBody)
+	if bufReadFromErr!= nil{
+		fmt.Println("Error reading from buffer")
+		fmt.Println(bufReadFromErr)
+	}
+	s := buf.String()
+	return s
 }
 
 /* The function returns the absolute uri from the relative uri as a string
@@ -270,7 +394,7 @@ func fetchURI(uri string, writeOnDisk bool, rootPath string, uriOutput bool) []s
 		base: String with the base URI
    Returns:
 		An absolute URI for the given relative URI as a string
- */
+*/
 
 func fixURL(href, base string) string {
 	uri, err := url.Parse(href)
@@ -291,11 +415,11 @@ in the html response
 		httpBody: Response body is passed as a reader object
 	Returns :
 		An array of uris as string slices found in the anchor elements
- */
+*/
 
 func getAllLinksHTML(httpBody io.Reader) []string {
-	links := []string{}
-	hrefLinks := []string{}
+	var links []string
+	var hrefLinks []string
 	page := html.NewTokenizer(httpBody)
 	for {
 		tokenType := page.Next()
@@ -322,7 +446,7 @@ func getAllLinksHTML(httpBody io.Reader) []string {
 		Returns a slice of the string in case URI has a #
 		In case there is no # in the string it returns the original URI
 
- */
+*/
 
 func removePound(uri string) string {
 	if strings.Contains(uri, "#") {
@@ -344,9 +468,9 @@ func removePound(uri string) string {
 	checkString: A string to be checked for presence in the string
    Returns:
 	A true value if the string is present in the array else returns false
- */
+*/
 
-func check(uris []string, checkString string) bool {
+func checkURI(uris []string, checkString string) bool {
 	var check bool
 	for _, str := range uris {
 		if str == checkString {
@@ -357,17 +481,17 @@ func check(uris []string, checkString string) bool {
 	return check
 }
 
+
 /*This function appends a string to the string array for the hrefURL array
   Arguments:
 	hrefURLs: Receives a pointer to the hrefURL string array
     stringSlice: Receives a string slice to be appended to the hrefURLs array
- */
+*/
 
 func checkHrefURL(hrefURLs *[]string, stringSlice []string) {
 	for _, str := range stringSlice {
-		if !check(*hrefURLs, str) {
+		if !checkURI(*hrefURLs, str) {
 			*hrefURLs = append(*hrefURLs, str)
 		}
 	}
 }
-
