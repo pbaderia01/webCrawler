@@ -128,8 +128,7 @@ func insertInitialURI(crawlURI string, queue chan string){
 	atomic.AddInt64(&insertCounter,1)
 }
 
-/*
-	The function returns the value of the rootPath if the value specified in the ROOT_PATH env variable is valid
+/*  The function returns the value of the rootPath if the value specified in the ROOT_PATH env variable is valid
 	Else sets the writeOnDisk boolean flag to false and returns an empty string
 	Arguments:
 		A pointer to writeOnDisk boolean flag
@@ -150,8 +149,7 @@ func getRootPath(writeOnDisk *bool) string{
 	return rootPath
 }
 
-/*
-	The function checks the value of the DISPLAY_URI env variable and returns false if an invalid value is provided
+/*  The function checks the value of the DISPLAY_URI env variable and returns false if an invalid value is provided
 	or returns the value of the DISPLAY_URI env variable
  */
 
@@ -166,8 +164,7 @@ func checkDisplay() bool{
 	return uriOutput
 }
 
-/*
-	The function checks the value of the env variable THREAD_COUNT if the value specified in the env variable
+/*  The function checks the value of the env variable THREAD_COUNT if the value specified in the env variable
 	is invalid an error message is generated and the program exits.
 	Defaults to 5
 	Returns:
@@ -184,7 +181,7 @@ func getThreadCount() int64{
 			os.Exit(1)
 		}
 	} else {
-		threads = int64(5)
+		threads = 5
 	}
 	return threads
 }
@@ -218,8 +215,7 @@ func createConcurrentThreads(done chan bool, queue chan string, hostBaseURL stri
 	<-done
 }
 
-/*
-	The function checks the values of insertCounter and visitedCounter and checks for equality
+/*  The function checks the values of insertCounter and visitedCounter and checks for equality
 	On equality the function closes the queue channel and throws the flow back to the original function
 	Arguments:
 		queue: A string channel that is used to maintain a list of the URIs
@@ -263,8 +259,7 @@ func storeOnDisk(httpBody io.Reader, rootPath string) string {
 	return s
 }
 
-/*
-	The function checks the value of the rootPath variable and returns a boolean 
+/*  The function checks the value of the rootPath variable and returns a boolean
 	Whether rootPath is a valid disk path 
  */
 
@@ -283,8 +278,7 @@ func checkValidDiskPath(rootPath string) bool{
 	return true
 }
 
-/*
-	The function takes an array of strings containing all the links in the HTML response, converts the relative URIs
+/*  The function takes an array of strings containing all the links in the HTML response, converts the relative URIs
 	to absolute URIs, filters them based on the hostname and then inserts them into the queue channel to be processed
 	Arguments:
 		links: An array containing all the relative and absolute URIs
@@ -313,8 +307,7 @@ func filterAndEnqueue(links []string, queue chan string, hostBaseURL string, cra
 	}
 }
 
-/*
-	The function creates an httpClient with a request timeout of 30 seconds.
+/*  The function creates an httpClient with a request timeout of 30 seconds.
 	It closes the response body io.ReadCloser object and returns a new io.Reader object with the response body
 	Arguments:
 		uri: A string with the value of the uri from which the response is to be fetched
@@ -344,8 +337,7 @@ func fetchURI(uri string) io.Reader{
 	return strings.NewReader(response)
 }
 
-/*
-	The function prints on the terminal window if DISPLAY_URI=true and stores on disk if STORE_ON_DISK=true
+/*  The function prints on the terminal window if DISPLAY_URI=true and stores on disk if STORE_ON_DISK=true
 	this also returns an io.Reader object with the httpResponse
 	Arguments:
 		httBody: An io.Reader object with the response body
@@ -438,7 +430,7 @@ func getAllLinksHTML(httpBody io.Reader) []string {
 	}
 }
 
-/* removePound slices the url if a # is present in the URL
+/* This function checks if the string contains a # and returns a slice of the string trimmed till the index of #
    Arguments:
 		uri: Takes a string argument for the uri
    Returns:
