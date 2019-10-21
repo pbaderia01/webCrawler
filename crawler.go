@@ -25,7 +25,6 @@ func main() {
 	crawlURI = checkValidBaseURL(crawlURI)
 	_,crawlErr := strconv.ParseBool(crawlURI)
 	if crawlErr==nil{
-		fmt.Println("REACHED")
 		fmt.Println(crawlURI)
 	}
 	hostBaseURL := getBaseHostname(crawlURI)
@@ -230,7 +229,7 @@ func createConcurrentThreads(done chan bool, queue chan string, hostBaseURL stri
  */
 
 func checkCounters(queue chan string, done chan bool)  {
-	if insertCounter ==  visitedCounter {
+	if insertCounter == visitedCounter {
 		fmt.Println("Total Visited URIs: "+strconv.FormatInt(visitedCounter,10))
 		close(queue)
 		<- done
@@ -296,7 +295,7 @@ func checkValidDiskPath(rootPath string) bool{
 
 func filterAndEnqueue(links []string, queue chan string, hostBaseURL string, crawlURI string) {
 	for _, link := range links {
-		absolute := fixURL(link, crawlURI)
+		absolute := absoluteURL(link, crawlURI)
 		absoluteURL, er := url.Parse(absolute)
 		if er!=nil{
 			return
@@ -396,7 +395,7 @@ func getStringFromReader(httpBody io.Reader) string{
 		An absolute URI for the given relative URI as a string
 */
 
-func fixURL(href, base string) string {
+func absoluteURL(href, base string) string {
 	uri, err := url.Parse(href)
 	if err != nil {
 		return ""
@@ -432,7 +431,7 @@ func getAllLinksHTML(httpBody io.Reader) []string {
 				if attr.Key == "href" {
 					poundRemovedURI := removePound(attr.Val)
 					hrefLinks = append(hrefLinks, poundRemovedURI)
-					checkHrefURL(&links, hrefLinks)
+					appendHrefURL(&links, hrefLinks)
 				}
 			}
 		}
@@ -450,13 +449,7 @@ func getAllLinksHTML(httpBody io.Reader) []string {
 
 func removePound(uri string) string {
 	if strings.Contains(uri, "#") {
-		var index int
-		for n, str := range uri {
-			if strconv.QuoteRune(str) == "'#'" {
-				index = n
-				break
-			}
-		}
+		index := strings.Index(uri,"#")
 		return uri[:index]
 	}
 	return uri
@@ -488,7 +481,7 @@ func checkURI(uris []string, checkString string) bool {
     stringSlice: Receives a string slice to be appended to the hrefURLs array
 */
 
-func checkHrefURL(hrefURLs *[]string, stringSlice []string) {
+func appendHrefURL(hrefURLs *[]string, stringSlice []string) {
 	for _, str := range stringSlice {
 		if !checkURI(*hrefURLs, str) {
 			*hrefURLs = append(*hrefURLs, str)

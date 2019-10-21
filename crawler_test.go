@@ -63,27 +63,27 @@ func TestGetAllLinksHTML3 (t *testing.T) {
 	}
 }
 
-func TestCheckHrefURLs1(t *testing.T){
+func TestAppendHrefURLs1(t *testing.T){
 	testHrefURls := [] string {"a","b","c"}
 	testUris := [] string {"a","d"}
-	checkHrefURL(&testHrefURls,testUris)
+	appendHrefURL(&testHrefURls,testUris)
 	if len(testHrefURls) == 5 {
-		fmt.Println("CheckHrefUrl function added all the Urls into the slice and checkURI function failed")
+		fmt.Println("appendHrefURL function added all the Urls into the slice and checkURI function failed")
 		t.Fail()
 	} else if len(testHrefURls) == 4 {
-		fmt.Println("CheckHrefUrl passed test 1")
+		fmt.Println("appendHrefURL passed test 1")
 	}
 }
 
-func TestCheckHrefURLs2(t *testing.T){
+func TestAppendHrefURLs2(t *testing.T){
 	testHrefURls := [] string {"a","b","c"}
 	testUris := [] string {"a","d"}
-	checkHrefURL(&testHrefURls,testUris)
+	appendHrefURL(&testHrefURls,testUris)
 	if len(testHrefURls) == 3 {
-		fmt.Println("CheckHrefUrl did not add any new elements to the slice")
+		fmt.Println("appendHrefURL did not add any new elements to the slice")
 		t.Fail()
 	} else if len(testHrefURls) == 4 {
-		fmt.Println("CheckHrefUrl passed test 2 with flying colours")
+		fmt.Println("appendHrefURL passed test 2 with flying colours")
 	}
 }
 
@@ -138,16 +138,16 @@ func TestCheckWriteOnDisk3(t *testing.T){
 	}
 }
 
-func TestFixUrl1(t *testing.T){
+func TestAbsoluteURL1(t *testing.T){
 	testURI := "/test1"
 	testBaseURI := "https://test1.com/test2"
-	testResult := fixURL(testURI,testBaseURI)
+	testResult := absoluteURL(testURI,testBaseURI)
 	if testResult!= "https://test1.com/test1" {
-		fmt.Println("FixURL test failed with an output"+testResult)
+		fmt.Println("absoluteURL test failed with an output"+testResult)
 		fmt.Println("The expected Output is https://test1.com/test1")
 		t.Fail()
 	} else {
-		fmt.Println("FixURL test case passed")
+		fmt.Println("absoluteURL test case passed")
 	}
 }
 
